@@ -272,3 +272,17 @@ def test_switched_off_judge_placeholder_is_not_shown_as_a_verdict(monkeypatch):
     }, block=False)
     turn = send(chat, "What is my account balance?")
     assert turn.findings["judge"] is None and "Qwen judge" not in turn.steps[3].detail
+
+
+def test_simulated_answer_is_never_labelled_as_the_model():
+    turn = send(backend.GuardedChat(), "What is the current savings interest rate?")
+    assert "Mô phỏng" in guardrails.reply_card(turn)
+    assert "Blue LLM trả lời · groq:openai/gpt-oss-120b" in guardrails.reply_card(turn, "groq:openai/gpt-oss-120b")
+
+
+def test_console_opens_on_the_real_model_only_when_its_key_exists(monkeypatch):
+    monkeypatch.setenv("BLUE_PROVIDER", "groq")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert backend.default_mode() == "stub"
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+    assert backend.default_mode() == "real"

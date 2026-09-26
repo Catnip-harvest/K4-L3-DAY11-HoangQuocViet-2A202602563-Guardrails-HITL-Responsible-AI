@@ -79,7 +79,19 @@ def model_for(mode: str) -> backend.AskLlm:
 
 def send(chat: backend.GuardedChat, text: str, user_id: str, mode: str) -> None:
     turn = run(chat.send(text, user_id, model_for(mode)))
-    st.session_state.messages.append({"kind": "turn", "turn": turn})
+    st.session_state.messages.append({"kind": "turn", "turn": turn, "model": model_label(mode)})
+
+
+def model_label(mode: str) -> str | None:
+    """What writes the answers in this mode; None for a simulation."""
+    if mode != "real":
+        return None
+    try:
+        from core.config import blue_provider_label
+
+        return blue_provider_label()
+    except Exception:  # noqa: BLE001 — a label must never break the page
+        return "Blue"
 
 
 def send_burst(chat: backend.GuardedChat, user_id: str, mode: str) -> None:
@@ -101,8 +113,10 @@ st.markdown(f"<style>{guardrails.stylesheet()}</style>", unsafe_allow_html=True)
 
 with st.sidebar:
     st.markdown('<div class="rag-panel-title">Bảng điều khiển</div>', unsafe_allow_html=True)
+    modes = list(backend.MODES)
     mode = st.radio(
-        "Model phía sau", list(backend.MODES), format_func=backend.MODES.get,
+        "Model phía sau", modes, index=modes.index(backend.default_mode()),
+        format_func=backend.MODES.get,
         help="Các chế độ mô phỏng không gọi model nào, dùng để trình diễn lớp output.",
     )
     st.caption("Lớp ML trên Groq — " + " · ".join(
@@ -170,7 +184,7 @@ with chat_tab:
                 shown = turn.text if len(turn.text) <= 400 else turn.text[:400] + f"… ({len(turn.text)} ký tự)"
                 st.html(components.user_bubble(shown or "(tin nhắn rỗng)"))
             with st.chat_message("assistant", avatar=":material/shield:"):
-                st.html(guardrails.reply_card(turn))
+                st.html(guardrails.reply_card(turn, message.get("model")))
 
         if not st.session_state.messages:
             st.html(components.empty_state(

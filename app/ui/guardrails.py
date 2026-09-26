@@ -79,8 +79,12 @@ def deciding_layer(turn) -> str:
 
 # --- chat --------------------------------------------------------------------
 
-def reply_card(turn) -> str:
-    """The assistant's side of a turn, headed by the layer that produced it."""
+def reply_card(turn, model_label: str | None = None) -> str:
+    """The assistant's side of a turn, headed by the layer that produced it.
+
+    model_label names what wrote an answer: the Blue model, or None for a
+    simulation, so a canned reply is never presented as the model's.
+    """
     if turn.verdict == "error":
         return (
             '<div class="gr-reply gr-reply--error">'
@@ -93,7 +97,7 @@ def reply_card(turn) -> str:
     layer = deciding_layer(turn)
     color = LAYER_COLORS[layer]
     headings = {
-        "answered": "Blue LLM trả lời",
+        "answered": f"Blue LLM trả lời · {model_label}" if model_label else "Mô phỏng · chưa gọi model thật",
         "redacted": "Output guardrail đã che dữ liệu",
         "blocked": f"Chặn ở {LAYER_NAMES.get(layer, layer)}",
     }
