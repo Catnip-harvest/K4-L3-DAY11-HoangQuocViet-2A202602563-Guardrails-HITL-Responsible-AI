@@ -4,9 +4,9 @@ Lab 11 — Configuration, provider selection, API keys.
 Hai tầng model (không trộn):
 
   Blue Team (CP2–CP3, guardrails / pipeline / protected agent)
-    → CỐ ĐỊNH OpenRouter ``liquid/lfm-2.5-2.6b``
-       https://openrouter.ai/liquid/lfm-2.5-2.6b
-    → Cần ``OPENROUTER_API_KEY``
+    → Mặc định Groq ``openai/gpt-oss-120b`` (lab gợi ý OpenRouter ``liquid/lfm-2.5-2.6b``)
+      đổi bằng ``BLUE_PROVIDER`` / ``BLUE_MODEL`` trong .env
+    → Cần ``GROQ_API_KEY`` (hoặc ``OPENROUTER_API_KEY`` nếu BLUE_PROVIDER=openrouter)
 
   Red Team (CP4)
     → Chọn một provider: OpenAI hoặc Gemini
@@ -34,9 +34,23 @@ PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_OPENROUTER = "openrouter"
 
-# --- Blue Team (LOCKED) ---
-BLUE_PROVIDER = PROVIDER_OPENROUTER
-BLUE_MODEL = "liquid/lfm-2.5-2.6b"
+# --- Blue Team ---
+# The lab suggests OpenRouter Liquid LFM 2.5 (2.6B). This submission uses a much
+# larger model from a different family than every other layer (Red = Google,
+# judge = Alibaba, input classifier = Meta), so no layer grades its own model.
+#   BLUE_PROVIDER=groq        openai/gpt-oss-120b (default; 1,000 free req/day)
+#   BLUE_PROVIDER=openrouter  nvidia/nemotron-3-ultra-550b-a55b:free (50 free req/day)
+# BLUE_MODEL overrides the model for either provider.
+# If you go back to Liquid, use "liquid/lfm-2.5-2.6b:free": on 2026-09-26 the
+# plain ID returned 404 "No endpoints found", so every Blue call failed.
+PROVIDER_GROQ = "groq"
+DEFAULT_BLUE_MODELS = {
+    PROVIDER_GROQ: "openai/gpt-oss-120b",
+    PROVIDER_OPENROUTER: "nvidia/nemotron-3-ultra-550b-a55b:free",
+}
+BLUE_PROVIDER = PROVIDER_GROQ
+DEFAULT_BLUE_MODEL = DEFAULT_BLUE_MODELS[BLUE_PROVIDER]
+BLUE_MODEL = DEFAULT_BLUE_MODEL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OPENROUTER_MODEL = BLUE_MODEL  # alias
 
@@ -100,12 +114,12 @@ except FileNotFoundError:
 # ---------------------------------------------------------------------------
 
 def get_blue_provider() -> str:
-    return BLUE_PROVIDER
+    raw = os.environ.get("BLUE_PROVIDER", "").strip().lower()
+    return raw if raw in DEFAULT_BLUE_MODELS else BLUE_PROVIDER
 
 
 def get_blue_model() -> str:
-    # Hard-locked; env cannot override for the graded Blue Team path.
-    return BLUE_MODEL
+    return os.environ.get("BLUE_MODEL", "").strip() or DEFAULT_BLUE_MODELS[get_blue_provider()]
 
 
 def get_openrouter_api_key() -> str:
@@ -113,7 +127,13 @@ def get_openrouter_api_key() -> str:
 
 
 def blue_client_kwargs() -> dict:
-    """OpenAI SDK kwargs pointing at OpenRouter (Blue Team only)."""
+    """OpenAI SDK kwargs for the Blue provider (Groq or OpenRouter)."""
+    if get_blue_provider() == PROVIDER_GROQ:
+        from core.groq_client import GROQ_BASE_URL, groq_api_key
+
+        # Groq's free tier allows 8K tokens/min on this model; the SDK retries
+        # 429s and honours retry-after, so a burst waits instead of failing.
+        return {"api_key": groq_api_key() or None, "base_url": GROQ_BASE_URL, "max_retries": 6}
     return {
         "api_key": get_openrouter_api_key() or None,
         "base_url": (
@@ -236,11 +256,14 @@ def is_harder_model() -> bool:
 
 def setup_api_key():
     """Ensure keys for Blue (OpenRouter) + Red / Red Advance (OpenAI or Gemini)."""
-    if not get_openrouter_api_key():
+    if get_blue_provider() == PROVIDER_GROQ:
+        if not os.environ.get("GROQ_API_KEY", "").strip():
+            os.environ["GROQ_API_KEY"] = input("Enter Groq API Key (Blue): ").strip()
+    elif not get_openrouter_api_key():
         os.environ["OPENROUTER_API_KEY"] = input(
             "Enter OpenRouter API Key (Blue): "
         ).strip()
-    print(f"Blue  — {blue_provider_label()}  [LOCKED]")
+    print(f"Blue  — {blue_provider_label()}")
 
     red = get_red_provider()
     model = get_red_model()

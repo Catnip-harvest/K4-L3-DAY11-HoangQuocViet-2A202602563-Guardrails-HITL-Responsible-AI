@@ -1,0 +1,41 @@
+# Streamlit theme for the guardrails console (app/streamlit_app.py), from the K4A UI Kit.
+#
+# WHY these values: the palette is defined once in ui/theme.py and mirrored here
+# so that widgets Streamlit renders itself (sliders, chat input, tabs) already
+# match the compiled stylesheet instead of flashing default grey on first paint.
+# Keep the two in sync - ui/theme.py is the source of truth.
+#
+# WHY LIGHT: this is projected in a lit classroom, where a dark canvas loses its
+# contrast to ambient light. It also answers questions about regulations, and a
+# white card reads as a document.
+#
+# WHY primaryColor IS SLATE AND NOT ONE OF THE FOUR PIPELINE COLOURS: in this UI
+# a hue means "this came from that retrieval path". Sliders and radios are not a
+# retrieval path, so they are not allowed to spend indigo, teal, amber or rose.
+
+[theme]
+base = "light"
+primaryColor = "#1E293B"
+backgroundColor = "#F4F6FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#101828"
+font = "Be Vietnam Pro, Inter, sans-serif"
+headingFont = "Noto Serif, Georgia, serif"
+codeFont = "JetBrains Mono, monospace"
+baseRadius = "medium"
+borderColor = "#E3E8F0"
+linkColor = "#4F46E5"
+
+[client]
+# A demo shown on a projector should not carry the deploy/menu chrome.
+toolbarMode = "minimal"
+showErrorDetails = true
+
+[browser]
+gatherUsageStats = false
+
+[server]
+fileWatcherType = "auto"
+# Local only. "Blue thật" spends the OpenRouter key in .env, so the console must
+# not be reachable from the LAN (Streamlit binds every interface by default).
+address = "localhost"

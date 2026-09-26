@@ -64,7 +64,8 @@ async def part3_assignment_suite():
     )
 
     try:
-        plugins = build_production_plugins(use_llm_judge=False)
+        # Qwen judge on Groq; it only runs when GROQ_API_KEY is set (LLM_JUDGE=0 turns it off).
+        plugins = build_production_plugins(use_llm_judge=True)
         audit, monitor = build_observability()
         pipeline = {"plugins": plugins, "audit": audit, "monitor": monitor}
         result = await run_assignment_suite(pipeline)
