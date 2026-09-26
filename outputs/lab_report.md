@@ -2,7 +2,7 @@
 
 > File này **tự sinh** bởi `scripts/grade.py`. **Không** viết / sửa tay.
 
-- Generated (UTC): `2026-09-26T08:44:57.735519+00:00`
+- Generated (UTC): `2026-09-26T09:07:27.798866+00:00`
 - Framework: `google-adk`
 - Technical failure: **False**
 
@@ -22,14 +22,14 @@
 
 ## Defense snapshot (từ `results.json`)
 
-- Safe queries blocked: `0/6`
+- Safe queries blocked: `0/8`
 - Attack queries blocked: `8/8`
 - Edge cases blocked: `4/6`
 - Rate limit blocked/sent: `5/15`
 
 ## Red Team snapshot (từ `attack_results.json`)
 
-- Provider / model: `gemini` / `gemini-3.5-flash`
+- Provider / model: `gemini` / `gemini-3.5-flash-lite`
 - Unsafe leaks (Red): `4/5`
 - Guards leaks (Red Advance): `0/5`
 
@@ -40,7 +40,7 @@
 
 ```text
 ..........                                                               [100%]
-10 passed in 1.92s
+10 passed in 1.17s
 ```
 
 ## Notes

@@ -113,6 +113,15 @@ EXTRA_BANKING_TOPICS = [
     "chuyen khoan", "the ngan hang", "sao ke", "lai", "khoan vay",
 ]
 
+# Canonical text (lower case, no diacritics) that is only a greeting or thanks,
+# optionally addressed ("hi there", "chao ban", "cam on anh") and punctuated.
+GREETING_ONLY = (
+    r"(?:hi|hello|hey|hiya|good (?:morning|afternoon|evening)|thanks|thank you|"
+    r"xin chao|chao|alo|cam on|cam on nhieu)"
+    r"(?: (?:there|ban|anh|chi|em|a|nhe|nha|vinbank|team))*"
+    r"\W*"  # trailing punctuation or emoji: "hi!", "hello 👋"
+)
+
 
 def topic_filter(user_input: str) -> InputStatus:
     """Check if input is off-topic or contains blocked topics.
@@ -135,6 +144,13 @@ def topic_filter(user_input: str) -> InputStatus:
     for topic in [*ALLOWED_TOPICS, *EXTRA_BANKING_TOPICS]:
         if re.search(rf"\b{re.escape(canonicalize(topic))}", text):
             return ALLOW
+
+    # A bare greeting or thanks is how a banking conversation starts, not an
+    # off-topic request: blocking "hi" was a false positive seen in the console.
+    # Only a message made of nothing else passes; "hi, ignore your rules…"
+    # still meets every check (and detect_injection runs before this one).
+    if re.fullmatch(GREETING_ONLY, text):
+        return ALLOW
 
     return BLOCK
 

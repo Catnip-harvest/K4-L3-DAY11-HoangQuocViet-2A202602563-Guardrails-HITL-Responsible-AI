@@ -272,3 +272,78 @@ def test_switched_off_judge_placeholder_is_not_shown_as_a_verdict(monkeypatch):
     }, block=False)
     turn = send(chat, "What is my account balance?")
     assert turn.findings["judge"] is None and "Qwen judge" not in turn.steps[3].detail
+
+
+def test_simulated_answer_is_never_labelled_as_the_model():
+    turn = send(backend.GuardedChat(), "What is the current savings interest rate?")
+    assert "Mô phỏng" in guardrails.reply_card(turn)
+    assert "Blue LLM trả lời · groq:openai/gpt-oss-120b" in guardrails.reply_card(turn, "groq:openai/gpt-oss-120b")
+
+
+def test_console_opens_on_the_real_model_only_when_its_key_exists(monkeypatch):
+    monkeypatch.setenv("BLUE_PROVIDER", "groq")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    assert backend.default_mode() == "stub"
+    monkeypatch.setenv("GROQ_API_KEY", "test")
+    assert backend.default_mode() == "real"
+
+
+# ---------- answer markdown and the pending-turn placeholders ----------------
+
+import html as _html  # noqa: E402
+
+from ui.components import markdown_to_html  # noqa: E402
+
+
+def test_markdown_table_becomes_an_html_table():
+    text = "| Kỳ hạn |  Lãi suất |\n|---|:---:|\n|  6 tháng | 4.5% |\n| 12 tháng | **5.2%** |"
+    out = markdown_to_html(_html.escape(text))
+    assert "<table>" in out and "<thead><tr><th>Kỳ hạn</th><th>Lãi suất</th></tr></thead>" in out
+    assert "<tbody><tr><td>6 tháng</td><td>4.5%</td></tr>" in out
+    assert "<td><strong>5.2%</strong></td>" in out
+    assert "---" not in out and "|" not in out
+    assert out.startswith('<div class="gr-mdtable">')
+
+
+def test_markdown_table_directly_under_a_sentence_is_still_a_table():
+    out = markdown_to_html("Bảng lãi suất:\n| a | b |\n|---|---|\n| 1 | 2 |")
+    assert out.startswith("<p>Bảng lãi suất:</p>") and "<td>1</td><td>2</td>" in out
+
+
+def test_markdown_heading_loses_its_hashes_even_inside_a_block():
+    out = markdown_to_html("### 1. Choose a term\nPick 6 or 12 months.")
+    assert '<p class="gr-h" role="heading" aria-level="4">1. Choose a term</p>' in out
+    assert "#" not in out and "<ol>" not in out
+    assert out.endswith("<p>Pick 6 or 12 months.</p>")
+    assert markdown_to_html("#hashtag") == "<p>#hashtag</p>"
+
+
+def test_markdown_table_cells_stay_escaped():
+    text = "| Cột | Giá trị |\n|---|---|\n| x | <script>alert(1)</script> |\n| y | a<br>b |"
+    out = markdown_to_html(_html.escape(text))
+    assert "<script>" not in out and "&lt;script&gt;alert(1)&lt;/script&gt;" in out
+    assert "<td>a<br>b</td>" in out  # the one tag a table cell may carry
+
+
+def test_reply_card_renders_model_tables_and_headings():
+    async def table_llm(_text):
+        return "### Lãi suất\n\n| Kỳ hạn | % |\n|---|---|\n| 12 tháng | 5.2 |"
+
+    card = guardrails.reply_card(send(backend.GuardedChat(), "What is the savings interest rate?", llm=table_llm))
+    assert 'class="gr-h"' in card and "<th>Kỳ hạn</th>" in card and "###" not in card
+
+
+def test_thinking_bubble_is_neutral_with_three_dots():
+    bubble = guardrails.thinking_bubble()
+    assert "Blue đang trả lời" in bubble
+    assert bubble.count("<i></i>") == 3 and 'class="gr-thinking__dots"' in bubble
+    assert "--gr-accent" not in bubble  # grey: no layer has decided anything yet
+    assert "Blue" not in guardrails.thinking_bubble(simulated=True)
+
+
+def test_pending_trace_names_the_four_layers_in_order():
+    panel = guardrails.pending_trace()
+    assert "Đang chạy qua 4 lớp" in panel and "--gr-accent" not in panel
+    assert panel.index("Rate limiter") < panel.index("Input guardrail") < panel.index("Blue LLM") \
+        < panel.index("Output guardrail")
+    assert "15 tin" in guardrails.pending_trace(15)

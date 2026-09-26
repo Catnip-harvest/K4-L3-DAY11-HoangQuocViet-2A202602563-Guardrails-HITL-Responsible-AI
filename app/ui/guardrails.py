@@ -79,8 +79,12 @@ def deciding_layer(turn) -> str:
 
 # --- chat --------------------------------------------------------------------
 
-def reply_card(turn) -> str:
-    """The assistant's side of a turn, headed by the layer that produced it."""
+def reply_card(turn, model_label: str | None = None) -> str:
+    """The assistant's side of a turn, headed by the layer that produced it.
+
+    model_label names what wrote an answer: the Blue model, or None for a
+    simulation, so a canned reply is never presented as the model's.
+    """
     if turn.verdict == "error":
         return (
             '<div class="gr-reply gr-reply--error">'
@@ -93,7 +97,7 @@ def reply_card(turn) -> str:
     layer = deciding_layer(turn)
     color = LAYER_COLORS[layer]
     headings = {
-        "answered": "Blue LLM trả lời",
+        "answered": f"Blue LLM trả lời · {model_label}" if model_label else "Mô phỏng · chưa gọi model thật",
         "redacted": "Output guardrail đã che dữ liệu",
         "blocked": f"Chặn ở {LAYER_NAMES.get(layer, layer)}",
     }
@@ -105,6 +109,32 @@ def reply_card(turn) -> str:
         f'<div class="gr-reply__b">{_reply_html(turn.reply)}</div>'
         + (f'<div class="gr-reply__n">{_esc(note)}</div>' if note else "")
         + "</div>"
+    )
+
+
+def thinking_bubble(simulated: bool = False) -> str:
+    """Placeholder while a turn runs. Grey on purpose: no layer has decided yet.
+
+    A simulation is not Blue, so it is not announced as Blue either.
+    """
+    label = "Mô phỏng đang trả lời…" if simulated else "Blue đang trả lời…"
+    return (
+        '<div class="gr-reply gr-thinking" role="status" aria-live="polite">'
+        f'<span class="gr-thinking__t">{_esc(label)}</span>'
+        '<span class="gr-thinking__dots" aria-hidden="true"><i></i><i></i><i></i></span>'
+        "</div>"
+    )
+
+
+def pending_trace(burst_size: int | None = None) -> str:
+    """Trace column while a turn runs, instead of the previous turn's trace."""
+    title = f"Đang gửi {burst_size} tin qua 4 lớp…" if burst_size else "Đang chạy qua 4 lớp…"
+    order = " → ".join(LAYER_NAMES[key] for key in ("rate_limiter", "input_guardrail", "llm", "output_guardrail"))
+    return (
+        '<div class="gr-pending" role="status">'
+        f'<div class="gr-pending__t"><i class="gr-dot"></i>{_esc(title)}</div>'
+        f'<div class="gr-pending__s">{_esc(order)}</div>'
+        "</div>"
     )
 
 

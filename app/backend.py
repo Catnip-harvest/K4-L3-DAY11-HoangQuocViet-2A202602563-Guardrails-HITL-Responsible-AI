@@ -113,6 +113,21 @@ class _Modes(Mapping):
 
 MODES: Mapping[str, str] = _Modes()
 
+
+def real_blue_available() -> bool:
+    """True when the key for the configured Blue provider is set (env only, no API call)."""
+    try:
+        from core.config import PROVIDER_GROQ, get_blue_provider, get_openrouter_api_key
+        from core.groq_client import groq_available
+    except Exception:  # noqa: BLE001 — the console must still open without src config
+        return False
+    return groq_available() if get_blue_provider() == PROVIDER_GROQ else bool(get_openrouter_api_key())
+
+
+def default_mode() -> str:
+    """Open on the real model when it can run; the simulations are for demos without a key."""
+    return "real" if real_blue_available() else "stub"
+
 STUBS: dict[str, AskLlm] = {
     "stub": stub_answer,
     "stub_secret": stub_leaks_secret,

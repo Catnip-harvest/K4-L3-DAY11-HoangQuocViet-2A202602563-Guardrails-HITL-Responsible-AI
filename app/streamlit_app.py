@@ -79,19 +79,52 @@ def model_for(mode: str) -> backend.AskLlm:
 
 def send(chat: backend.GuardedChat, text: str, user_id: str, mode: str) -> None:
     turn = run(chat.send(text, user_id, model_for(mode)))
-    st.session_state.messages.append({"kind": "turn", "turn": turn})
+    st.session_state.messages.append({"kind": "turn", "turn": turn, "model": model_label(mode)})
 
 
-def send_burst(chat: backend.GuardedChat, user_id: str, mode: str) -> None:
-    turns = [
-        run(chat.send(backend.BURST_QUESTION, user_id, model_for(mode)))
-        for _ in range(backend.BURST_SIZE)
-    ]
-    blocked = sum(1 for t in turns if t.layer == "rate_limiter")
-    st.session_state.messages.append({
-        "kind": "burst", "turn": turns[-1],
-        "passed": len(turns) - blocked, "blocked": blocked,
-    })
+def model_label(mode: str) -> str | None:
+    """What writes the answers in this mode; None for a simulation."""
+    if mode != "real":
+        return None
+    try:
+        from core.config import blue_provider_label
+
+        return blue_provider_label()
+    except Exception:  # noqa: BLE001 — a label must never break the page
+        return "Blue"
+
+
+def send_burst(chat: backend.GuardedChat, user_id: str, mode: str, on_progress=None) -> None:
+    turns = []
+    try:
+        for _ in range(backend.BURST_SIZE):
+            turns.append(run(chat.send(backend.BURST_QUESTION, user_id, model_for(mode))))
+            if on_progress:
+                on_progress(len(turns))
+    finally:
+        # A click during the burst reruns the script at the next Streamlit call;
+        # the messages already sent still get their summary card.
+        if turns:
+            blocked = sum(1 for t in turns if t.layer == "rate_limiter")
+            st.session_state.messages.append({
+                "kind": "burst", "turn": turns[-1],
+                "passed": len(turns) - blocked, "blocked": blocked,
+            })
+
+
+def queue(kind: str, user_id: str, mode: str, **fields) -> None:
+    """Remember what to send and rerun at once; the model is called at the end
+    of the next run, after the whole page is drawn (see the bottom of the file).
+
+    Calling it here instead would keep the previous run's page on screen,
+    greyed out as stale, for as long as the model takes.
+    """
+    st.session_state.pending = {"kind": kind, "user_id": user_id, "mode": mode, **fields}
+    st.rerun()
+
+
+def shorten(text: str) -> str:
+    return text if len(text) <= 400 else text[:400] + f"… ({len(text)} ký tự)"
 
 
 # --- page --------------------------------------------------------------------
@@ -99,10 +132,16 @@ def send_burst(chat: backend.GuardedChat, user_id: str, mode: str) -> None:
 theme.inject_css()
 st.markdown(f"<style>{guardrails.stylesheet()}</style>", unsafe_allow_html=True)
 
+# A turn or burst waiting to be sent: drawn on this run, sent at its very end.
+pending = st.session_state.get("pending")
+pending_slot = None
+
 with st.sidebar:
     st.markdown('<div class="rag-panel-title">Bảng điều khiển</div>', unsafe_allow_html=True)
+    modes = list(backend.MODES)
     mode = st.radio(
-        "Model phía sau", list(backend.MODES), format_func=backend.MODES.get,
+        "Model phía sau", modes, index=modes.index(backend.default_mode()),
+        format_func=backend.MODES.get,
         help="Các chế độ mô phỏng không gọi model nào, dùng để trình diễn lớp output.",
     )
     st.caption("Lớp ML trên Groq — " + " · ".join(
@@ -116,11 +155,11 @@ with st.sidebar:
     st.divider()
     samples = backend.sample_prompts()
     picked = st.selectbox("Câu mẫu", range(len(samples)), format_func=lambda i: samples[i][0])
-    if st.button("Gửi câu mẫu", width="stretch"):
-        send(chat, samples[picked][1], user_id, mode)
-    if st.button(f"Thử spam {backend.BURST_SIZE} tin", width="stretch",
+    if st.button("Gửi câu mẫu", width="stretch", disabled=bool(pending)):
+        queue("turn", user_id, mode, text=samples[picked][1])
+    if st.button(f"Thử spam {backend.BURST_SIZE} tin", width="stretch", disabled=bool(pending),
                  help="Gửi liên tiếp cùng một câu để thấy rate limiter hoạt động."):
-        send_burst(chat, user_id, mode)
+        queue("burst", user_id, mode)
 
     st.divider()
     st.markdown('<div class="rag-label" style="margin-bottom:8px">Màu = lớp đã xử lý</div>',
@@ -167,12 +206,23 @@ with chat_tab:
                         chat.limiter.max_requests, chat.limiter.window_seconds))
                 continue
             with st.chat_message("user", avatar=":material/person:"):
-                shown = turn.text if len(turn.text) <= 400 else turn.text[:400] + f"… ({len(turn.text)} ký tự)"
-                st.html(components.user_bubble(shown or "(tin nhắn rỗng)"))
+                st.html(components.user_bubble(shorten(turn.text) or "(tin nhắn rỗng)"))
             with st.chat_message("assistant", avatar=":material/shield:"):
-                st.html(guardrails.reply_card(turn))
+                st.html(guardrails.reply_card(turn, message.get("model")))
 
-        if not st.session_state.messages:
+        if pending:
+            with st.chat_message("user", avatar=":material/person:"):
+                st.html(components.user_bubble(
+                    f"{backend.BURST_SIZE} × “{backend.BURST_QUESTION}”" if pending["kind"] == "burst"
+                    else shorten(pending["text"]) or "(tin nhắn rỗng)"))
+            with st.chat_message("assistant", avatar=":material/shield:"):
+                pending_slot = st.empty()
+                if pending["kind"] == "burst":
+                    pending_slot.progress(0.0, text=f"Đang gửi tin 1/{backend.BURST_SIZE}…")
+                else:
+                    pending_slot.html(guardrails.thinking_bubble(simulated=pending["mode"] != "real"))
+
+        if not st.session_state.messages and not pending:
             st.html(components.empty_state(
                 "Gửi một tin nhắn",
                 "Hỏi một câu ngân hàng, hoặc chọn một câu tấn công trong “Câu mẫu” ở thanh bên "
@@ -180,7 +230,11 @@ with chat_tab:
             ))
 
     with trace_col:
-        if not st.session_state.messages:
+        if pending:
+            st.markdown('<div class="rag-label" style="margin:2px 0 10px">Đường đi của tin nhắn gần nhất</div>',
+                        unsafe_allow_html=True)
+            st.html(guardrails.pending_trace(backend.BURST_SIZE if pending["kind"] == "burst" else None))
+        elif not st.session_state.messages:
             st.html(components.empty_state(
                 "Chưa có lượt nào",
                 "Sau mỗi tin nhắn, bốn lớp bảo vệ hiện ở đây theo đúng thứ tự chạy.",
@@ -257,6 +311,22 @@ with log_tab:
     else:
         st.html(components.empty_state("Nhật ký trống", "Mỗi tin nhắn sẽ được ghi lại ở đây."))
 
-if text := st.chat_input("Hỏi VinBank một câu…"):
-    send(chat, text, user_id, mode)
+if text := st.chat_input("Hỏi VinBank một câu…", disabled=bool(pending)):
+    queue("turn", user_id, mode, text=text)
+
+# Every element above is already drawn for this run, so nothing is left stale
+# (greyed out) while the model works; only the placeholder changes.
+if pending:
+    # Cleared before the call: if a click reruns the script mid-call, the turn
+    # must not be sent a second time.
+    del st.session_state["pending"]
+    if pending["kind"] == "burst":
+        def show_progress(done: int) -> None:
+            total = backend.BURST_SIZE
+            label = f"Đã gửi {total}/{total} tin" if done >= total else f"Đang gửi tin {done + 1}/{total}…"
+            pending_slot.progress(done / total, text=label)
+
+        send_burst(chat, pending["user_id"], pending["mode"], on_progress=show_progress)
+    else:
+        send(chat, pending["text"], pending["user_id"], pending["mode"])
     st.rerun()

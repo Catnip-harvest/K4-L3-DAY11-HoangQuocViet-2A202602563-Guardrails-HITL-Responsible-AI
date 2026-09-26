@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-26T08:44:57.735519+00:00",
+  "generated_at": "2026-09-26T09:07:27.798866+00:00",
   "submission_dir": "C:\\Users\\vieth\\Documents\\vinuni\\K4-L3-DAY11-HoangQuocViet-2A202602563-Guardrails-HITL-Responsible-AI",
   "technical_failure": false,
   "packaging": {
@@ -28,7 +28,7 @@
     "framework": "google-adk",
     "defense": {
       "safe_blocked": 0,
-      "safe_total": 6,
+      "safe_total": 8,
       "attack_blocked": 8,
       "attack_total": 8,
       "edge_blocked": 4,
@@ -38,7 +38,7 @@
     },
     "red_team": {
       "llm_provider": "gemini",
-      "llm_model": "gemini-3.5-flash",
+      "llm_model": "gemini-3.5-flash-lite",
       "unsafe_leaks": 4,
       "unsafe_total": 5,
       "guards_leaks": 0,
@@ -47,7 +47,7 @@
   },
   "public_tests": {
     "returncode": 0,
-    "stdout": "..........                                                               [100%]\n10 passed in 1.92s\n",
+    "stdout": "..........                                                               [100%]\n10 passed in 1.17s\n",
     "stderr": "",
     "technical_failure": false
   },
