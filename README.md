@@ -1,5 +1,12 @@
 # Day 11 — Controlled Agent Security (2026)
 
+> 🧑‍🎓 **Học viên:** Hoàng Quốc Việt · **MSSV:** 2A202602563
+>
+> **Cách chạy (từ gốc repo):** `python src/main.py --part 2` (guardrails) ·
+> `--part 3` (pipeline → `outputs/results.json`) · `--part 4` (Red / Red Advance → `outputs/attack_results.json`).
+> Kiểm tra offline, không cần API key: `pytest tests/prep tests/smoke tests/public -q`.
+> Console minh hoạ (không chấm): `pip install -r app/requirements.txt` rồi `streamlit run app/streamlit_app.py`.
+
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  
 > 🎯 **Mục tiêu:** xây **Blue** (phòng thủ), rồi red-team **Red** + **Red Advance**.  
 > ✅ Làm theo **Checkpoint 1 → 5** trong [`CHECKPOINTS.md`](CHECKPOINTS.md) · nộp theo [`SUBMISSION.md`](SUBMISSION.md).
