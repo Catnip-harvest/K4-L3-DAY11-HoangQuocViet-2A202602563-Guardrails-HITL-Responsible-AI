@@ -145,12 +145,11 @@ def _create_blue_llm():
     return ask_llm
 
 
-async def run_through_layers(plugins: list, ask_llm, text: str, user_id: str) -> dict:
-    """Send one message through the ordered plugins and the LLM.
+async def admit(plugins: list, text: str, user_id: str) -> dict | None:
+    """Input side: every on_user_message_callback, in order.
 
-    Returns reply, blocked, layer (the plugin name that acted, or None),
-    redacted, and error. A provider error is reported as an error, never
-    as a block — a throttled call is not a successful defense.
+    Returns the blocked outcome if a layer stopped the message, or None if
+    every input layer let it through.
     """
     from google.genai import types
 
@@ -165,6 +164,23 @@ async def run_through_layers(plugins: list, ask_llm, text: str, user_id: str) ->
         if replacement is not None:
             return {"reply": _content_text(replacement), "blocked": True,
                     "layer": plugin.name, "redacted": False, "error": None}
+    return None
+
+
+async def run_through_layers(plugins: list, ask_llm, text: str, user_id: str) -> dict:
+    """Send one message through the ordered plugins and the LLM.
+
+    Returns reply, blocked, layer (the plugin name that acted, or None),
+    redacted, and error. A provider error is reported as an error, never
+    as a block — a throttled call is not a successful defense.
+    """
+    stopped = await admit(plugins, text, user_id)
+    return stopped if stopped is not None else await answer(plugins, ask_llm, text)
+
+
+async def answer(plugins: list, ask_llm, text: str) -> dict:
+    """Model + output side for a message every input layer admitted."""
+    from google.genai import types
 
     try:
         raw_reply = await ask_llm(text)
@@ -282,9 +298,7 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
         audit, monitor = build_observability()
     ask_llm = pipeline.get("llm") or _create_blue_llm()
 
-    async def ask(text: str, user_id: str) -> dict:
-        request_id = audit.record_input(user_id=user_id, text=text)
-        outcome = await run_through_layers(plugins, ask_llm, text, user_id)
+    def finish(request_id: str, user_id: str, text: str, outcome: dict) -> dict:
         audit.record_output(
             user_id=user_id, text=outcome["reply"], blocked=outcome["blocked"],
             layer=outcome["layer"], request_id=request_id,
@@ -304,13 +318,33 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
             row["error"] = outcome["error"]
         return row
 
+    async def ask(text: str, user_id: str) -> dict:
+        request_id = audit.record_input(user_id=user_id, text=text)
+        return finish(request_id, user_id, text, await run_through_layers(plugins, ask_llm, text, user_id))
+
+    async def flood(text: str, user_id: str, count: int) -> list[dict]:
+        """``count`` copies arrive together, as a flood does: every one meets the
+        rate limiter before any is answered. Sent one at a time instead, each
+        would wait for the model, and a slow model (the free Blue takes seconds
+        per reply) spreads 15 messages past the 60 s window, so the limiter
+        never sees a flood at all. Admitted copies still go through the model."""
+        arrivals = []
+        for _ in range(count):
+            request_id = audit.record_input(user_id=user_id, text=text)
+            arrivals.append((request_id, await admit(plugins, text, user_id)))
+        return [
+            finish(request_id, user_id, text,
+                   stopped if stopped is not None else await answer(plugins, ask_llm, text))
+            for request_id, stopped in arrivals
+        ]
+
     # Each query gets its own user so Tests 1–3 never trip the rate limiter.
     safe_rows = [await ask(q, f"safe-{i}") for i, q in enumerate(SAFE_QUERIES, 1)]
     attack_rows = [await ask(q, f"attacker-{i}") for i, q in enumerate(ATTACK_QUERIES, 1)]
     edge_rows = [await ask(q, f"edge-{i}") for i, q in enumerate(EDGE_CASES, 1)]
 
     # Test 3: one user floods the pipeline.
-    burst = [await ask(RATE_LIMIT_QUESTION, "spam-user") for _ in range(RATE_LIMIT_BURST)]
+    burst = await flood(RATE_LIMIT_QUESTION, "spam-user", RATE_LIMIT_BURST)
     limiter = next((p for p in plugins if isinstance(p, RateLimitPlugin)), None)
     rate_blocked = sum(1 for row in burst if row["layer"] == "rate_limiter")
     rate_limit = {

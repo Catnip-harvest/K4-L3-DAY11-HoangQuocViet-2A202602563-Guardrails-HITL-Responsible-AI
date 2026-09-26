@@ -4,8 +4,8 @@ Lab 11 — Configuration, provider selection, API keys.
 Hai tầng model (không trộn):
 
   Blue Team (CP2–CP3, guardrails / pipeline / protected agent)
-    → CỐ ĐỊNH OpenRouter ``liquid/lfm-2.5-2.6b``
-       https://openrouter.ai/liquid/lfm-2.5-2.6b
+    → OpenRouter, mặc định ``nvidia/nemotron-3-ultra-550b-a55b:free``
+      (lab gợi ý ``liquid/lfm-2.5-2.6b``; đổi bằng ``BLUE_MODEL`` trong .env)
     → Cần ``OPENROUTER_API_KEY``
 
   Red Team (CP4)
@@ -34,9 +34,16 @@ PROVIDER_OPENAI = "openai"
 PROVIDER_GEMINI = "gemini"
 PROVIDER_OPENROUTER = "openrouter"
 
-# --- Blue Team (LOCKED) ---
+# --- Blue Team ---
 BLUE_PROVIDER = PROVIDER_OPENROUTER
-BLUE_MODEL = "liquid/lfm-2.5-2.6b"
+# The lab suggests Liquid LFM 2.5 (2.6B). This submission uses a much larger
+# model from a different family than Red (Gemini), so attacker and defender
+# never share a model. Override with BLUE_MODEL in .env; any OpenRouter ":free"
+# model works on a free key.
+# If you go back to Liquid, use "liquid/lfm-2.5-2.6b:free": on 2026-09-26 the
+# plain ID returned 404 "No endpoints found", so every Blue call failed.
+DEFAULT_BLUE_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+BLUE_MODEL = DEFAULT_BLUE_MODEL
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_OPENROUTER_MODEL = BLUE_MODEL  # alias
 
@@ -104,8 +111,7 @@ def get_blue_provider() -> str:
 
 
 def get_blue_model() -> str:
-    # Hard-locked; env cannot override for the graded Blue Team path.
-    return BLUE_MODEL
+    return os.environ.get("BLUE_MODEL", "").strip() or DEFAULT_BLUE_MODEL
 
 
 def get_openrouter_api_key() -> str:

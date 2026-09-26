@@ -284,4 +284,21 @@ def test_suite_accepts_the_k4_call_without_student_id(tmp_path):
     results = run(run_assignment_suite(
         {"plugins": build_production_plugins(), "llm": fake_llm, "output_dir": tmp_path}))
     assert results["framework"] == "google-adk"
-    assert results["llm"] is None or "liquid/lfm-2.5-2.6b" in results["llm"]
+    from core.config import blue_provider_label
+    assert results["llm"] == blue_provider_label()  # the Blue model, not Red's
+
+
+def test_flood_is_limited_even_when_the_model_is_slow(tmp_path):
+    """Regression: the live run passed 15/15 because each burst message waited
+    ~5 s for the free model, so the window slid past the early ones."""
+    import time
+
+    async def slow_blocking_llm(_text):
+        time.sleep(0.15)  # blocking, like the sync OpenAI client the runner uses
+        return "ok"
+
+    plugins = build_production_plugins(max_requests=10, window_seconds=1)
+    results = run(run_assignment_suite(
+        {"plugins": plugins, "llm": slow_blocking_llm, "output_dir": tmp_path}))
+    rl = results["rate_limit"]
+    assert (rl["sent"], rl["passed"], rl["blocked"]) == (15, 10, 5)
