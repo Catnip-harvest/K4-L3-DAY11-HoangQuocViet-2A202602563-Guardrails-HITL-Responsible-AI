@@ -45,6 +45,14 @@ STATUS_LABELS: dict[str, str] = {
     "error": "lỗi",
 }
 
+# The LLM judge's four criteria (keys as the output guardrail reports them).
+JUDGE_CRITERIA_VI: dict[str, str] = {
+    "safety": "an toàn",
+    "relevance": "liên quan",
+    "accuracy": "chính xác",
+    "tone": "giọng điệu",
+}
+
 STYLESHEET = Path(__file__).with_name("guardrails.css")
 
 
@@ -147,6 +155,33 @@ def findings(turn) -> str:
     def words(items) -> str:
         return ", ".join(code(i) for i in items) if items else '<span class="gr-none">không có</span>'
 
+    not_run = '<span class="gr-none">không chạy</span>'
+
+    def prompt_guard() -> str:
+        score, error = f.get("prompt_guard_score"), f.get("prompt_guard_error")
+        threshold = f.get("prompt_guard_threshold", 0.5)
+        if error:
+            return f'lỗi — cho qua (fail open) <span class="gr-none">{_esc(error)}</span>'
+        if score is None:
+            return not_run
+        side = "≥ ngưỡng, chặn" if score >= threshold else "dưới ngưỡng"
+        return f'{code(f"{score:.4f}")} <span class="gr-none">ngưỡng {threshold:g} · {side}</span>'
+
+    def judge_verdict() -> str:
+        judge = f.get("judge")
+        if not judge:
+            return not_run
+        if judge.get("error"):
+            return f'lỗi — cho qua (fail open) <span class="gr-none">{_esc(judge["error"])}</span>'
+        verdict = judge.get("verdict") or ("SAFE" if judge.get("safe") else "UNSAFE")
+        scores = judge.get("scores") or {}
+        shown = " · ".join(
+            f"{_esc(JUDGE_CRITERIA_VI.get(name, name))} {_esc(value)}/5"
+            for name, value in scores.items() if value is not None
+        )
+        return code(verdict) + (f' <span class="gr-none">{shown}</span>' if shown else "")
+
+    judge = f.get("judge") or {}
     rows = [
         row("Độ dài", f"{f.get('input_length', 0)} ký tự"),
         row("Sau chuẩn hoá", code(f.get("canonical", "")[:160]) + (
@@ -156,8 +191,12 @@ def findings(turn) -> str:
             else '<span class="gr-none">không</span>'),
         row("Từ khoá ngân hàng", words(f.get("banking_topics"))),
         row("Chủ đề bị cấm", words(f.get("blocked_topics"))),
+        row("Prompt Guard (Meta)", prompt_guard()),
         row("Output filter thấy", words(f.get("output_issues"))),
+        row("Qwen judge", judge_verdict()),
     ]
+    if judge.get("reason") and not judge.get("error"):
+        rows.append(row("Lý do của judge", _esc(judge["reason"])))
     return f'<div class="gr-kvs">{"".join(rows)}</div>'
 
 

@@ -5,7 +5,7 @@
 > **Cách chạy (từ gốc repo):** `python src/main.py --part 2` (guardrails) ·
 > `--part 3` (pipeline → `outputs/results.json`) · `--part 4` (Red / Red Advance → `outputs/attack_results.json`).
 > Kiểm tra offline, không cần API key: `pytest tests/prep tests/smoke tests/public -q`.
-> **Model:** Blue = NVIDIA `nemotron-3-ultra-550b-a55b:free` (OpenRouter; lab gợi ý Liquid 2.6B, đổi bằng `BLUE_MODEL`) · Red / Red Advance = Google `gemini-3.5-flash`. Hai họ model khác nhau: bên tấn công và bên phòng thủ không dùng chung model.
+> **Model — bốn họ khác nhau, mỗi lớp một họ:** Blue = OpenAI `gpt-oss-120b` (Groq) · input classifier = Meta `llama-prompt-guard-2-86m` (Groq) · output judge = Alibaba `qwen3.8-27b` (Groq) · Red / Red Advance = Google `gemini-3.5-flash`. Lab gợi ý Blue là Liquid 2.6B; đổi bằng `BLUE_PROVIDER` / `BLUE_MODEL`. Hai lớp Groq tự tắt khi thiếu `GROQ_API_KEY` (hoặc `PROMPT_GUARD=0`, `LLM_JUDGE=0`) và fail open khi lỗi mạng.
 > Console minh hoạ (không chấm): `pip install -r app/requirements.txt` rồi `streamlit run app/streamlit_app.py`.
 
 > 👤 **Hình thức:** bài tập **cá nhân** (1 người / 1 MSSV).  

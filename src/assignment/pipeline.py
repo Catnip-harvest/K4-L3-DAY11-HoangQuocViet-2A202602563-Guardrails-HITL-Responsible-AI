@@ -162,8 +162,10 @@ async def admit(plugins: list, text: str, user_id: str) -> dict | None:
             continue
         replacement = await check_input(invocation_context=context, user_message=message)
         if replacement is not None:
+            # Read now: in a flood the next arrival overwrites the plugin's state.
             return {"reply": _content_text(replacement), "blocked": True,
-                    "layer": plugin.name, "redacted": False, "error": None}
+                    "layer": plugin.name, "redacted": False, "error": None,
+                    "reason": getattr(plugin, "last_block_reason", None) or plugin.name}
     return None
 
 
@@ -201,6 +203,7 @@ async def answer(plugins: list, ask_llm, text: str) -> dict:
         response = checked if checked is not None else response
         if _content_text(response.content) != before:
             outcome["layer"] = plugin.name
+            outcome["reason"] = getattr(plugin, "last_action", None)
             if getattr(plugin, "last_action", None) == "redacted":
                 outcome["redacted"] = True
             else:
@@ -312,6 +315,8 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
         }
         if len(text) > 300:
             row["input_length"] = len(text)
+        if outcome.get("reason"):
+            row["reason"] = outcome["reason"]
         if outcome["redacted"]:
             row["redacted"] = True
         if outcome["error"]:
@@ -365,17 +370,42 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
         for destination, payload, expected in EGRESS_CASES
     ]
 
+    input_layer = next((p for p in plugins if getattr(p, "name", "") == "input_guardrail"), None)
+    output_layer = next((p for p in plugins if getattr(p, "name", "") == "output_guardrail"), None)
+    monitor.judge_checks = getattr(output_layer, "judge_checks", 0)
+    monitor.judge_fails = getattr(output_layer, "judge_fails", 0)
+    ml_layers = {
+        "prompt_guard": {
+            "model": _layer_model("PROMPT_GUARD"),
+            "checks": getattr(input_layer, "prompt_guard_checks", 0),
+            "blocks": getattr(input_layer, "prompt_guard_blocks", 0),
+            "errors": getattr(input_layer, "prompt_guard_errors", 0),
+        },
+        "judge": {
+            "model": _layer_model("LLM_JUDGE") if getattr(output_layer, "use_llm_judge", False) else None,
+            "checks": getattr(output_layer, "judge_checks", 0),
+            "fails": getattr(output_layer, "judge_fails", 0),
+            "errors": getattr(output_layer, "judge_errors", 0),
+        },
+    }
+
     alerts = monitor.check_metrics()
     results = {
         "student_id": student_id or os.environ.get("STUDENT_ID", "").strip() or DEFAULT_STUDENT_ID,
         "framework": "google-adk",
         "llm": _llm_label(),
+        "models": {
+            "blue": _llm_label(),
+            "input_classifier": ml_layers["prompt_guard"]["model"],
+            "output_judge": ml_layers["judge"]["model"],
+        },
         "plugin_order": [getattr(p, "name", type(p).__name__) for p in plugins],
         "safe_queries": safe_rows,
         "attack_queries": attack_rows,
         "rate_limit": rate_limit,
         "edge_cases": edge_rows,
         "egress_checks": egress_rows,
+        "judge_sample": list(getattr(output_layer, "judge_log", []))[:10],
         "summary": {
             "safe_blocked": sum(1 for r in safe_rows if r["blocked"]),
             "attacks_blocked": sum(1 for r in attack_rows if r["blocked"]),
@@ -383,6 +413,7 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
             "llm_errors": sum(1 for r in [*safe_rows, *attack_rows, *edge_rows, *burst] if r.get("error")),
             "egress_policy_correct": all(r["allowed"] == r["expected"] for r in egress_rows),
             "alerts": [a.metric for a in alerts],
+            "ml_layers": ml_layers,
         },
     }
 
@@ -392,6 +423,10 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
             "(check OPENROUTER_API_KEY / quota). They are recorded as errors, not blocks."
         )
 
+    for name, layer in ml_layers.items():
+        if layer["errors"]:
+            print(f"WARNING: {layer['errors']} {name} call(s) failed and were let through (fail open).")
+
     output_dir = Path(pipeline.get("output_dir") or OUTPUTS)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "results.json").write_text(
@@ -400,6 +435,17 @@ async def run_assignment_suite(pipeline, student_id: str | None = None) -> dict:
     audit.export_json(output_dir / "audit_log.json")
     monitor.export_json(output_dir / "metrics.json")
     return results
+
+
+def _layer_model(env_flag: str) -> str | None:
+    """Model behind a Groq layer, or None when that layer is switched off."""
+    try:
+        from core import groq_client
+    except Exception:  # noqa: BLE001 — informational only
+        return None
+    if not groq_client.layer_enabled(env_flag):
+        return None
+    return groq_client.prompt_guard_model() if env_flag == "PROMPT_GUARD" else groq_client.judge_model()
 
 
 def _llm_label() -> str | None:

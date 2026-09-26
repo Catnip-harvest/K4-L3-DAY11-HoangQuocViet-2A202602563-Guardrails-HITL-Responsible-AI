@@ -4,6 +4,8 @@
 
 Runs on simulated models by default, so it needs no API key. "Blue thật" uses
 the same Blue model the graded suite calls, configured by the repo's .env.
+With GROQ_API_KEY set, Prompt Guard (input) and the Qwen judge (output) also run;
+PROMPT_GUARD=0 / LLM_JUDGE=0 switch either off.
 Not graded; the graded artifacts still come from `python src/main.py`.
 """
 from __future__ import annotations
@@ -103,6 +105,8 @@ with st.sidebar:
         "Model phía sau", list(backend.MODES), format_func=backend.MODES.get,
         help="Các chế độ mô phỏng không gọi model nào, dùng để trình diễn lớp output.",
     )
+    st.caption("Lớp ML trên Groq — " + " · ".join(
+        f"{name}: {state}" for name, state in backend.ml_layers_status()))
     user_id = st.text_input("User ID", value="khach-hang-01",
                             help="Rate limit tính riêng cho từng user.")
     max_requests = st.slider("Hạn mức (tin)", 1, 20, DEFAULT_MAX_REQUESTS)
@@ -132,6 +136,7 @@ snapshot = chat.monitor.snapshot()
 st.html(components.header(
     [
         ("Model", backend.MODES[mode], theme.COLORS["ok"] if mode == "real" else None),
+        ("Lớp ML", backend.ml_layers_summary(), None),  # env only, no API call
         ("Hạn mức", f"{max_requests} tin / {window_seconds} giây", None),
         ("Yêu cầu trong phiên", str(snapshot["total_requests"]), None),
         ("Bị chặn", f"{snapshot['blocked_requests']} ({snapshot['block_rate']:.0%})", None),

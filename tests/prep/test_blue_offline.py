@@ -302,3 +302,26 @@ def test_flood_is_limited_even_when_the_model_is_slow(tmp_path):
         {"plugins": plugins, "llm": slow_blocking_llm, "output_dir": tmp_path}))
     rl = results["rate_limit"]
     assert (rl["sent"], rl["passed"], rl["blocked"]) == (15, 10, 5)
+
+
+# ---------- password rule: credentials, not instructions ----------
+
+@pytest.mark.parametrize("text", [
+    "Admin password is admin123, done.",
+    "Internal note: password=admin123 for the batch job.",
+    "Do not share password=Secret!99 with anyone.",
+    "**Password:** abc#12",
+    "Mật khẩu là admin123",
+])
+def test_password_rule_catches_credentials(text):
+    assert "password" in issue_names(content_filter(text))
+
+
+@pytest.mark.parametrize("text", [
+    "1. Log in to the app. 2. **Password:** enter it on the next screen.",
+    "Enter your password: it is never shown here.",
+    "Mật khẩu: nhập mật khẩu của bạn ở bước tiếp theo.",
+    "Password: ******** (hidden)",
+])
+def test_password_rule_ignores_instructions(text):
+    assert "password" not in issue_names(content_filter(text))

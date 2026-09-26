@@ -2,15 +2,24 @@
 Checkpoint 2 — Input Guardrails
   - detect_injection (normalization + layered signals)
   - topic_filter
+  - prompt_guard_score (Meta Llama Prompt Guard 2 on Groq, optional)
   - InputGuardrailPlugin (ADK)
 
 Both filters return the string "ALLOW" or "BLOCK" (never True/False), so a
-caller can never invert the meaning by accident.
+caller can never invert the meaning by accident. They stay pure regex: the
+public tests call them directly, with no key and no network.
+
+Prompt Guard is the ML layer. It catches rephrased overrides the regex has no
+pattern for, runs only on messages every cheap check already passed, and fails
+open: an API error is counted and logged, never turned into a block.
 """
 from __future__ import annotations
 
+import math
+import os
 import re
 import unicodedata
+from dataclasses import dataclass
 from typing import Literal
 
 from google.genai import types
@@ -18,6 +27,8 @@ from google.adk.plugins import base_plugin
 from google.adk.agents.invocation_context import InvocationContext
 
 from core.config import ALLOWED_TOPICS, BLOCKED_TOPICS
+# A module-level name on purpose: tests replace input_guardrails.groq_chat.
+from core.groq_client import groq_chat, layer_enabled, prompt_guard_model
 
 # Quyết định rõ ràng — tránh đảo nghĩa True/False
 InputStatus = Literal["ALLOW", "BLOCK"]
@@ -129,6 +140,80 @@ def topic_filter(user_input: str) -> InputStatus:
 
 
 # ============================================================
+# prompt_guard_score()
+#
+# Llama Prompt Guard 2 (86M) replies with one number: the probability that
+# the text is an injection or jailbreak. Measured on this suite, safe banking
+# questions score 0.0003-0.0011 and "ignore all previous instructions" 0.999,
+# so 0.5 sits far from both. Plain data-extraction requests ("print your
+# system prompt") score low; the regex layer is what catches those.
+# ============================================================
+
+PROMPT_GUARD_THRESHOLD = float(os.environ.get("PROMPT_GUARD_THRESHOLD", "0.5"))
+
+# The model reads at most 512 tokens. 1500 characters stays under that even for
+# Vietnamese, and the overlap keeps a phrase split across two windows whole in one.
+PROMPT_GUARD_WINDOW_CHARS = 1500
+PROMPT_GUARD_WINDOW_OVERLAP = 200
+
+
+@dataclass
+class PromptGuardResult:
+    """What one Prompt Guard check found.
+
+    score and error are both None when the layer is off or the text is empty,
+    so a caller can tell "not asked" apart from "asked and it failed".
+    """
+    score: float | None = None
+    error: str | None = None
+
+
+def split_into_windows(text: str) -> list[str]:
+    """Cut text into overlapping windows the model can read in one pass."""
+    step = PROMPT_GUARD_WINDOW_CHARS - PROMPT_GUARD_WINDOW_OVERLAP
+    windows = []
+    start = 0
+    while True:
+        windows.append(text[start:start + PROMPT_GUARD_WINDOW_CHARS])
+        if start + PROMPT_GUARD_WINDOW_CHARS >= len(text):
+            return windows
+        start += step
+
+
+async def _score_one_window(window: str) -> float:
+    reply = await groq_chat(
+        model=prompt_guard_model(),
+        messages=[{"role": "user", "content": window}],
+    )
+    content = (reply.choices[0].message.content or "").strip()
+    probability = float(content)
+    if not math.isfinite(probability):
+        raise ValueError(f"Prompt Guard returned a non-finite score: {content!r}")
+    return probability
+
+
+async def check_prompt_guard(text: str) -> PromptGuardResult:
+    """Score text with Prompt Guard. Never raises.
+
+    The highest window wins: one injected paragraph in a long message is
+    enough to make the whole message an attack.
+    """
+    if not text or not text.strip() or not layer_enabled("PROMPT_GUARD"):
+        return PromptGuardResult()
+    try:
+        scores = [await _score_one_window(window) for window in split_into_windows(text)]
+        return PromptGuardResult(score=max(scores))
+    except Exception as error:  # fail open: a flaky API must not block customers
+        return PromptGuardResult(error=f"{type(error).__name__}: {error}"[:200])
+
+
+async def prompt_guard_score(text: str) -> float | None:
+    """Highest injection probability in text, or None if the layer is off,
+    the text is empty, or the call failed. Never raises."""
+    return (await check_prompt_guard(text)).score
+
+
+# ============================================================
 # InputGuardrailPlugin
 #
 # Runs before the LLM. Returning types.Content short-circuits the model call;
@@ -159,6 +244,12 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         self.blocked_count = 0
         self.total_count = 0
         self.last_block_reason: str | None = None
+        # Prompt Guard bookkeeping, read by the pipeline and the console.
+        self.last_prompt_guard_score: float | None = None
+        self.last_prompt_guard_error: str | None = None
+        self.prompt_guard_checks = 0   # scores actually obtained from the API
+        self.prompt_guard_blocks = 0
+        self.prompt_guard_errors = 0
 
     def _extract_text(self, content: types.Content) -> str:
         """Extract plain text from a Content object."""
@@ -190,6 +281,8 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
         """
         self.total_count += 1
         self.last_block_reason = None
+        self.last_prompt_guard_score = None
+        self.last_prompt_guard_error = None
         text = self._extract_text(user_message)
 
         if len(text) > MAX_INPUT_CHARS:
@@ -206,6 +299,21 @@ class InputGuardrailPlugin(base_plugin.BasePlugin):
             self.blocked_count += 1
             self.last_block_reason = "off_topic"
             return self._block_response(OFF_TOPIC_REFUSAL)
+
+        # Last, so no API call is spent on text a free check already refused.
+        guard = await check_prompt_guard(text)
+        if guard.error is not None:
+            self.prompt_guard_errors += 1
+            self.last_prompt_guard_error = guard.error
+            return None
+        if guard.score is not None:
+            self.prompt_guard_checks += 1
+            self.last_prompt_guard_score = guard.score
+            if guard.score >= PROMPT_GUARD_THRESHOLD:
+                self.prompt_guard_blocks += 1
+                self.blocked_count += 1
+                self.last_block_reason = "prompt_guard"
+                return self._block_response(INJECTION_REFUSAL)
 
         return None
 

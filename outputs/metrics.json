@@ -3,7 +3,7 @@
   "blocked_requests": 17,
   "block_rate": 0.4857142857142857,
   "rate_limit_hits": 5,
-  "judge_checks": 0,
+  "judge_checks": 18,
   "judge_fails": 0,
   "judge_fail_rate": 0.0,
   "alerts": [
