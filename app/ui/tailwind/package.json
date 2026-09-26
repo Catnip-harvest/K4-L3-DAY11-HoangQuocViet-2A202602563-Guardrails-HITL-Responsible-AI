@@ -1,0 +1,12 @@
+{
+  "name": "rag-ui-tailwind",
+  "private": true,
+  "description": "Build step for the demo UI stylesheet. Output ui/tailwind.build.css is committed; node_modules is not.",
+  "scripts": {
+    "build": "tailwindcss -i input.css -o ../tailwind.build.css --minify"
+  },
+  "devDependencies": {
+    "tailwindcss": "^4.3.3",
+    "@tailwindcss/cli": "^4.3.3"
+  }
+}

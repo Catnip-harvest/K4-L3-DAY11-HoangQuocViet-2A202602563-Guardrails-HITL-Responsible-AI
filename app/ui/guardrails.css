@@ -1,0 +1,165 @@
+/* Guardrails console additions to the K4A UI Kit.
+   Unlayered on purpose, like the kit's rag-* rules, so Streamlit's own
+   unlayered emotion styles cannot override them. Only the kit's --rag-*
+   variables are used, so no Tailwind rebuild is needed. */
+
+.gr-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--gr-accent, var(--rag-border-strong));
+}
+
+/* --- reply card ---------------------------------------------------------- */
+.gr-reply {
+  border: 1px solid var(--rag-border);
+  border-left: 3px solid var(--gr-accent, var(--rag-border-strong));
+  border-radius: 12px;
+  background: var(--rag-surface);
+  box-shadow: var(--shadow-card);
+  padding: 12px 18px 14px;
+  max-width: 72ch;
+}
+.gr-reply__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--gr-accent, var(--rag-muted));
+  margin-bottom: 6px;
+}
+.gr-reply__ms {
+  margin-left: auto;
+  font-family: var(--rag-mono);
+  font-weight: 500;
+  color: var(--rag-faint);
+}
+.gr-reply__b {
+  color: var(--rag-text);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+.gr-reply__b p { margin: 0 0 0.4em; }
+.gr-reply__b code { word-break: break-all; }
+.gr-reply__b p:last-child { margin-bottom: 0; }
+.gr-reply__n {
+  margin-top: 8px;
+  font-size: 0.8125rem;
+  color: var(--rag-muted);
+}
+.gr-reply--error {
+  border-left-color: var(--rag-warn);
+  background: var(--rag-surface-2);
+}
+.gr-reply--error .gr-reply__h { color: var(--rag-warn); }
+.gr-redacted {
+  font-family: var(--rag-mono);
+  font-size: 0.82em;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--rag-surface-3);
+  color: var(--rag-text-dim);
+}
+
+/* --- trace --------------------------------------------------------------- */
+.gr-trace {
+  border: 1px solid var(--rag-border);
+  border-radius: 12px;
+  background: var(--rag-surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.gr-step {
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 11px 14px;
+}
+.gr-step + .gr-step { border-top: 1px solid var(--rag-border-soft); }
+.gr-step__n {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--rag-border-strong);
+  background: var(--rag-surface-2);
+  color: var(--rag-muted);
+  font: 600 11px/20px var(--rag-mono);
+  text-align: center;
+}
+.gr-step__t { font-size: 0.875rem; font-weight: 600; color: var(--rag-text); }
+.gr-step__d { margin-top: 2px; font-size: 0.8125rem; color: var(--rag-muted); line-height: 1.45; }
+.gr-chip {
+  padding: 2px 7px;
+  border-radius: 5px;
+  border: 1px solid var(--rag-border);
+  background: var(--rag-surface-2);
+  color: var(--rag-muted);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.gr-step.is-skip .gr-step__t,
+.gr-step.is-skip .gr-step__d,
+.gr-step.is-skip .gr-chip { color: var(--rag-faint); }
+.gr-step.is-error .gr-chip { color: var(--rag-warn); border-color: var(--rag-warn); }
+.gr-step.is-acted .gr-step__n {
+  background: var(--gr-accent);
+  border-color: var(--gr-accent);
+  color: #fff;
+}
+.gr-step.is-acted .gr-chip {
+  color: var(--gr-accent);
+  border-color: color-mix(in srgb, var(--gr-accent) 30%, transparent);
+  background: color-mix(in srgb, var(--gr-accent) 7%, #fff);
+}
+
+/* --- technical detail ---------------------------------------------------- */
+.gr-kvs { display: grid; gap: 8px; }
+/* Label above value: the trace column is ~400px, too narrow for two columns. */
+.gr-kv {
+  display: grid;
+  gap: 3px;
+  font-size: 0.8125rem;
+  color: var(--rag-text-dim);
+}
+.gr-kv > span {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--rag-muted);
+}
+.gr-kv code, .gr-table code {
+  font-family: var(--rag-mono);
+  font-size: 0.78rem;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--rag-surface-3);
+  word-break: break-word;
+}
+.gr-none { color: var(--rag-faint); }
+
+/* --- egress table -------------------------------------------------------- */
+.gr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  background: var(--rag-surface);
+  border: 1px solid var(--rag-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.gr-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--rag-muted);
+  background: var(--rag-surface-2);
+  padding: 8px 12px;
+}
+.gr-table td { padding: 8px 12px; border-top: 1px solid var(--rag-border-soft); color: var(--rag-text-dim); }
+.gr-ok { color: var(--rag-ok) !important; font-weight: 600; }
+.gr-no { color: var(--rag-danger) !important; font-weight: 600; }
