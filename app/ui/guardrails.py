@@ -112,6 +112,32 @@ def reply_card(turn, model_label: str | None = None) -> str:
     )
 
 
+def thinking_bubble(simulated: bool = False) -> str:
+    """Placeholder while a turn runs. Grey on purpose: no layer has decided yet.
+
+    A simulation is not Blue, so it is not announced as Blue either.
+    """
+    label = "Mô phỏng đang trả lời…" if simulated else "Blue đang trả lời…"
+    return (
+        '<div class="gr-reply gr-thinking" role="status" aria-live="polite">'
+        f'<span class="gr-thinking__t">{_esc(label)}</span>'
+        '<span class="gr-thinking__dots" aria-hidden="true"><i></i><i></i><i></i></span>'
+        "</div>"
+    )
+
+
+def pending_trace(burst_size: int | None = None) -> str:
+    """Trace column while a turn runs, instead of the previous turn's trace."""
+    title = f"Đang gửi {burst_size} tin qua 4 lớp…" if burst_size else "Đang chạy qua 4 lớp…"
+    order = " → ".join(LAYER_NAMES[key] for key in ("rate_limiter", "input_guardrail", "llm", "output_guardrail"))
+    return (
+        '<div class="gr-pending" role="status">'
+        f'<div class="gr-pending__t"><i class="gr-dot"></i>{_esc(title)}</div>'
+        f'<div class="gr-pending__s">{_esc(order)}</div>'
+        "</div>"
+    )
+
+
 def burst_card(passed: int, blocked: int, max_requests: int, window_seconds: int) -> str:
     color = LAYER_COLORS["rate_limiter"]
     return (

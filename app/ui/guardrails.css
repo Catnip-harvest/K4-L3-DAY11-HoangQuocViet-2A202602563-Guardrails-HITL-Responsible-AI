@@ -55,6 +55,101 @@
   background: var(--rag-surface-2);
 }
 .gr-reply--error .gr-reply__h { color: var(--rag-warn); }
+/* Markdown the model writes: headings and tables inside the reply body. */
+.gr-reply__b .gr-h {
+  margin: 0.8em 0 0.3em;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--rag-text);
+}
+.gr-reply__b .gr-h:first-child { margin-top: 0; }
+.gr-reply__b .gr-mdtable {
+  overflow-x: auto;
+  margin: 0.4em 0 0.6em;
+}
+.gr-reply__b .gr-mdtable:last-child { margin-bottom: 0; }
+.gr-reply__b table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+}
+.gr-reply__b th,
+.gr-reply__b td {
+  border: 1px solid var(--rag-border);
+  padding: 5px 9px;
+  text-align: left;
+  vertical-align: top;
+}
+.gr-reply__b th {
+  background: var(--rag-surface-2);
+  font-weight: 600;
+  color: var(--rag-text);
+}
+
+/* --- pending turn: grey, because no layer has decided anything yet -------- */
+.gr-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  color: var(--rag-muted);
+  font-size: 0.875rem;
+  /* Held back briefly so an instant (simulated) reply does not flash it. */
+  animation: gr-appear 0.2s ease-out 0.15s both;
+}
+.gr-thinking__dots { display: inline-flex; gap: 4px; }
+.gr-thinking__dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--rag-faint);
+  animation: gr-dot-pop 1.2s ease-in-out infinite;
+}
+.gr-thinking__dots i:nth-child(2) { animation-delay: 0.15s; }
+.gr-thinking__dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes gr-dot-pop {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+@keyframes gr-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.gr-pending {
+  border: 1px solid var(--rag-border);
+  border-radius: 12px;
+  background: var(--rag-surface);
+  box-shadow: var(--shadow-card);
+  padding: 12px 14px;
+}
+.gr-pending__t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--rag-text-dim);
+}
+.gr-pending__t .gr-dot { animation: gr-breathe 1.6s ease-in-out infinite; }
+.gr-pending__s { margin-top: 4px; font-size: 0.8125rem; color: var(--rag-muted); }
+@keyframes gr-breathe {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+/* The kit's global rule shortens animations to 0.01ms, which would freeze the
+   dots mid-hop; switch them off outright and show them still instead. */
+@media (prefers-reduced-motion: reduce) {
+  .gr-thinking,
+  .gr-thinking__dots i,
+  .gr-pending__t .gr-dot { animation: none !important; }
+  .gr-thinking__dots i { opacity: 0.7; transform: none; }
+}
+
 .gr-redacted {
   font-family: var(--rag-mono);
   font-size: 0.82em;

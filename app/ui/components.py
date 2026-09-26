@@ -54,31 +54,93 @@ def _inline_md(text: str) -> str:
     return text
 
 
-def markdown_to_html(text: str) -> str:
-    """Convert the small markdown subset an LLM answer actually uses."""
-    blocks = re.split(r"\n\s*\n", (text or "").strip())
-    out: list[str] = []
-    for block in blocks:
-        lines = [line.strip() for line in block.splitlines() if line.strip()]
-        if not lines:
-            continue
-        # Patterns live outside the f-strings: a backslash inside an f-string
-        # expression is a SyntaxError before Python 3.12, and labs pin 3.11.
-        numbered, bulleted = r"^\d+[\.\)]\s+", r"^[-*•]\s+"
-        if all(re.match(numbered, line) for line in lines):
-            items = "".join(
-                f"<li>{_inline_md(re.sub(numbered, '', line))}</li>"
-                for line in lines
-            )
-            out.append(f"<ol>{items}</ol>")
-        elif all(re.match(bulleted, line) for line in lines):
-            items = "".join(
-                f"<li>{_inline_md(re.sub(bulleted, '', line))}</li>"
-                for line in lines
-            )
-            out.append(f"<ul>{items}</ul>")
+# Patterns live outside the f-strings: a backslash inside an f-string
+# expression is a SyntaxError before Python 3.12, and labs pin 3.11.
+_NUMBERED = re.compile(r"^\d+[\.\)]\s+")
+_BULLETED = re.compile(r"^[-*•]\s+")
+_HEADING = re.compile(r"^#{1,6}\s+(.*?)(?:\s+#+)?$")
+_TABLE_RULE = re.compile(r"^[\s|:\-]+$")  # the |---|:---:| line under a header row
+# Models put <br> inside table cells; after escaping it would print literally.
+_ESCAPED_BR = re.compile(r"&lt;br\s*/?&gt;", re.IGNORECASE)
+
+
+def _line_kind(line: str) -> str:
+    if _HEADING.match(line):
+        return "heading"
+    return "table" if line.startswith("|") else "text"
+
+
+def _segments(lines: list[str]) -> list[tuple[str, list[str]]]:
+    """Group a block's lines into headings, table runs and everything else.
+
+    A model often writes "### Title" or a table straight under a sentence with
+    no blank line between, so a block is split rather than rendered whole.
+    """
+    segments: list[tuple[str, list[str]]] = []
+    for line in lines:
+        kind = _line_kind(line)
+        if kind != "heading" and segments and segments[-1][0] == kind:
+            segments[-1][1].append(line)
         else:
-            out.append("<p>" + _inline_md("<br>".join(lines)) + "</p>")
+            segments.append((kind, [line]))
+    return segments
+
+
+def _table_cells(line: str) -> list[str]:
+    inner = line.strip()
+    inner = inner[1:] if inner.startswith("|") else inner
+    inner = inner[:-1] if inner.endswith("|") else inner
+    return [_inline_md(_ESCAPED_BR.sub("<br>", cell.strip())) for cell in inner.split("|")]
+
+
+def _table_html(lines: list[str]) -> str:
+    """First row is the header; the dashed separator row is dropped."""
+    rows = [
+        _table_cells(line) for line in lines
+        if not (_TABLE_RULE.match(line) and "-" in line)
+    ]
+    if not rows:
+        return ""
+    head = "".join(f"<th>{cell}</th>" for cell in rows[0])
+    body = "".join(
+        "<tr>" + "".join(f"<td>{cell}</td>" for cell in row) + "</tr>"
+        for row in rows[1:]
+    )
+    # The wrapper scrolls sideways so a wide table never widens the card.
+    return (
+        f'<div class="gr-mdtable"><table><thead><tr>{head}</tr></thead>'
+        f"<tbody>{body}</tbody></table></div>"
+    )
+
+
+def _text_html(lines: list[str]) -> str:
+    if all(_NUMBERED.match(line) for line in lines):
+        items = "".join(f"<li>{_inline_md(_NUMBERED.sub('', line))}</li>" for line in lines)
+        return f"<ol>{items}</ol>"
+    if all(_BULLETED.match(line) for line in lines):
+        items = "".join(f"<li>{_inline_md(_BULLETED.sub('', line))}</li>" for line in lines)
+        return f"<ul>{items}</ul>"
+    return "<p>" + _inline_md("<br>".join(lines)) + "</p>"
+
+
+def markdown_to_html(text: str) -> str:
+    """Convert the small markdown subset an LLM answer actually uses.
+
+    Expects already-escaped text: headings, tables and lists are recognised by
+    characters that escaping leaves alone (#, |, -, digits), so no markup the
+    model wrote can reach the page.
+    """
+    out: list[str] = []
+    for block in re.split(r"\n\s*\n", (text or "").strip()):
+        lines = [line.strip() for line in block.splitlines() if line.strip()]
+        for kind, group in _segments(lines):
+            if kind == "heading":
+                title = _HEADING.match(group[0]).group(1)
+                out.append(f'<p class="gr-h" role="heading" aria-level="4">{_inline_md(title)}</p>')
+            elif kind == "table":
+                out.append(_table_html(group))
+            else:
+                out.append(_text_html(group))
     return "".join(out)
 
 
