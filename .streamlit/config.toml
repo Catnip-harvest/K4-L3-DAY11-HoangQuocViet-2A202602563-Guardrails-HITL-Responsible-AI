@@ -36,3 +36,6 @@ gatherUsageStats = false
 
 [server]
 fileWatcherType = "auto"
+# Local only. "Blue thật" spends the OpenRouter key in .env, so the console must
+# not be reachable from the LAN (Streamlit binds every interface by default).
+address = "localhost"
